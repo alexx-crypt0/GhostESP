@@ -7,7 +7,7 @@
 #include "io_manager.h"
 #endif
 
-/* --- lookup table from Matthias Hertel’s library --- */
+/* --- lookup table from Matthias Hertel's library --- */
 static const int8_t KNOBDIR[16] = {
      0, -1,  1,  0,
      1,  0,  0, -1,
@@ -19,6 +19,7 @@ static const int8_t KNOBDIR[16] = {
 #define ENCODER_ACCEL_THRESH_US_1 15000  /* <15 ms => 2x */
 #define ENCODER_ACCEL_THRESH_US_2 5000   /* <5 ms  => 4x */
 #define LATCH3 3
+#define ENCODER_PULSE_DIVIDER 3          /* Divide encoder pulses by 3 for 1:1 click-to-menu mapping */
 
 /* helper for ms timestamps */
 static inline uint32_t now_ms(void)
@@ -174,16 +175,31 @@ encoder_direction_t encoder_peek_direction(const encoder_t *enc)
     return ENCODER_DIR_NONE;
 }
 
+/* Static counter for 3:1 divider to map 3 physical clicks to 1 menu movement */
+static int32_t encoder_pulse_buffer = 0;
+
 void encoder_consume_direction(encoder_t *enc, encoder_direction_t dir)
 {
     if (dir == ENCODER_DIR_CW) {
         if (enc->pending_steps <= 0) return;
-        enc->pending_steps--;
-        enc->position_ext++;
+        encoder_pulse_buffer++;
+        
+        /* Only report every ENCODER_PULSE_DIVIDER pulses (3 physical clicks = 1 menu step) */
+        if (encoder_pulse_buffer >= ENCODER_PULSE_DIVIDER) {
+            enc->pending_steps--;
+            enc->position_ext++;
+            encoder_pulse_buffer = 0;
+        }
     } else if (dir == ENCODER_DIR_CCW) {
         if (enc->pending_steps >= 0) return;
-        enc->pending_steps++;
-        enc->position_ext--;
+        encoder_pulse_buffer--;
+        
+        /* Only report every ENCODER_PULSE_DIVIDER pulses (3 physical clicks = 1 menu step) */
+        if (encoder_pulse_buffer <= -ENCODER_PULSE_DIVIDER) {
+            enc->pending_steps++;
+            enc->position_ext--;
+            encoder_pulse_buffer = 0;
+        }
     } else {
         return;
     }
